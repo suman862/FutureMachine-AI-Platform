@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vision-service
+  namespace: multimodal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vision-service
+  template:
+    metadata:
+      labels:
+        app: vision-service
+    spec:
+      containers:
+        - name: vision
+          image: ghcr.io/OWNER/toy-multimodal-vision:IMAGE_TAG
+          ports:
+            - containerPort: 8002
+          env:
+            - name: MODEL_ID
+              value: HuggingFaceTB/SmolVLM-500M-Instruct
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8002
+            periodSeconds: 20
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8002
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vision-service
+  namespace: multimodal
+spec:
+  selector:
+    app: vision-service
+  ports:
+    - port: 8002
+      targetPort: 8002

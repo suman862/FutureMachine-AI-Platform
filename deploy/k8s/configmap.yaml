@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multimodal-config
+  namespace: multimodal
+data:
+  TEXT_SERVICE_URL: http://text-service:8001
+  VISION_SERVICE_URL: http://vision-service:8002
+  AUDIO_SERVICE_URL: http://audio-service:8003
+  HTTP_TIMEOUT_SECONDS: "120"

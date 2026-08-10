@@ -1,0 +1,451 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        skipDefaultCheckout(false)
+
+        timeout(time: 60, unit: 'MINUTES')
+
+        buildDiscarder(
+            logRotator(
+                numToKeepStr: '20',
+                artifactNumToKeepStr: '10'
+            )
+        )
+    }
+
+    environment {
+        REGISTRY = 'ghcr.io'
+        IMAGE_PREFIX = 'YOUR_GITHUB_USERNAME/toy-multimodal'
+
+        IMAGE_TAG = "${env.GIT_COMMIT}"
+
+        // Jenkins credentials
+        GHCR_CREDENTIALS = credentials('ghcr-credentials')
+        KUBE_CONFIG = credentials('kubeconfig')
+    }
+
+    stages {
+
+        /*
+         * ============================================================
+         * 1. CHECKOUT
+         * ============================================================
+         */
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+
+                sh '''
+                    echo "Commit: ${GIT_COMMIT}"
+                    echo "Branch: ${GIT_BRANCH}"
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 2. PYTHON QUALITY
+         * ============================================================
+         */
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    python3 -m venv .venv
+
+                    . .venv/bin/activate
+
+                    pip install --upgrade pip
+
+                    pip install -e ".[dev]"
+                '''
+            }
+        }
+
+
+        stage('Code Format Check') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+
+                    ruff format --check .
+                '''
+            }
+        }
+
+
+        stage('Lint') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+
+                    ruff check .
+                '''
+            }
+        }
+
+
+        stage('Type Check') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+
+                    mypy gateway
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 3. SECURITY
+         * ============================================================
+         */
+
+        stage('Static Security Scan') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+
+                    bandit \
+                        -r gateway services \
+                        -ll
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 4. TESTS
+         * ============================================================
+         */
+
+        stage('Unit Tests') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+
+                    pytest -q
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 5. BUILD DOCKER IMAGES
+         * ============================================================
+         */
+
+        stage('Build Docker Images') {
+            parallel {
+
+                stage('Build Gateway') {
+                    steps {
+                        sh '''
+                            docker build \
+                                -f Dockerfile.gateway \
+                                -t ${REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_TAG} \
+                                .
+                        '''
+                    }
+                }
+
+                stage('Build Text Service') {
+                    steps {
+                        sh '''
+                            docker build \
+                                -f services/text/Dockerfile \
+                                -t ${REGISTRY}/${IMAGE_PREFIX}-text:${IMAGE_TAG} \
+                                .
+                        '''
+                    }
+                }
+
+                stage('Build Vision Service') {
+                    steps {
+                        sh '''
+                            docker build \
+                                -f services/vision/Dockerfile \
+                                -t ${REGISTRY}/${IMAGE_PREFIX}-vision:${IMAGE_TAG} \
+                                .
+                        '''
+                    }
+                }
+
+                stage('Build Audio Service') {
+                    steps {
+                        sh '''
+                            docker build \
+                                -f services/audio/Dockerfile \
+                                -t ${REGISTRY}/${IMAGE_PREFIX}-audio:${IMAGE_TAG} \
+                                .
+                        '''
+                    }
+                }
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 6. CONTAINER SECURITY
+         * ============================================================
+         */
+
+        stage('Container Security Scan') {
+            steps {
+                sh '''
+                    trivy image \
+                        --severity HIGH,CRITICAL \
+                        --ignore-unfixed \
+                        --exit-code 1 \
+                        ${REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_TAG}
+
+                    trivy image \
+                        --severity HIGH,CRITICAL \
+                        --ignore-unfixed \
+                        --exit-code 1 \
+                        ${REGISTRY}/${IMAGE_PREFIX}-text:${IMAGE_TAG}
+
+                    trivy image \
+                        --severity HIGH,CRITICAL \
+                        --ignore-unfixed \
+                        --exit-code 1 \
+                        ${REGISTRY}/${IMAGE_PREFIX}-vision:${IMAGE_TAG}
+
+                    trivy image \
+                        --severity HIGH,CRITICAL \
+                        --ignore-unfixed \
+                        --exit-code 1 \
+                        ${REGISTRY}/${IMAGE_PREFIX}-audio:${IMAGE_TAG}
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 7. PUSH IMAGES
+         *
+         * Only deploy from main.
+         * PRs stop before this stage.
+         * ============================================================
+         */
+
+        stage('Push Images') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                sh '''
+                    echo "${GHCR_CREDENTIALS_PSW}" | \
+                        docker login ${REGISTRY} \
+                        -u "${GHCR_CREDENTIALS_USR}" \
+                        --password-stdin
+
+                    docker push \
+                        ${REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_TAG}
+
+                    docker push \
+                        ${REGISTRY}/${IMAGE_PREFIX}-text:${IMAGE_TAG}
+
+                    docker push \
+                        ${REGISTRY}/${IMAGE_PREFIX}-vision:${IMAGE_TAG}
+
+                    docker push \
+                        ${REGISTRY}/${IMAGE_PREFIX}-audio:${IMAGE_TAG}
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 8. PREPARE KUBERNETES MANIFESTS
+         * ============================================================
+         */
+
+        stage('Prepare Kubernetes Deployment') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                sh '''
+                    sed -i \
+                        "s#ghcr.io/OWNER/toy-multimodal-gateway:IMAGE_TAG#${REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_TAG}#g" \
+                        deploy/k8s/gateway.yaml
+
+                    sed -i \
+                        "s#ghcr.io/OWNER/toy-multimodal-text:IMAGE_TAG#${REGISTRY}/${IMAGE_PREFIX}-text:${IMAGE_TAG}#g" \
+                        deploy/k8s/text.yaml
+
+                    sed -i \
+                        "s#ghcr.io/OWNER/toy-multimodal-vision:IMAGE_TAG#${REGISTRY}/${IMAGE_PREFIX}-vision:${IMAGE_TAG}#g" \
+                        deploy/k8s/vision.yaml
+
+                    sed -i \
+                        "s#ghcr.io/OWNER/toy-multimodal-audio:IMAGE_TAG#${REGISTRY}/${IMAGE_PREFIX}-audio:${IMAGE_TAG}#g" \
+                        deploy/k8s/audio.yaml
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 9. KUBERNETES DEPLOYMENT
+         * ============================================================
+         */
+
+        stage('Deploy to Kubernetes') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                sh '''
+                    mkdir -p ~/.kube
+
+                    cp "${KUBE_CONFIG}" ~/.kube/config
+
+                    chmod 600 ~/.kube/config
+
+                    kubectl apply \
+                        -k deploy/k8s
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 10. ROLLOUT VALIDATION
+         * ============================================================
+         */
+
+        stage('Wait for Rollout') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                sh '''
+                    kubectl rollout status \
+                        deployment/gateway \
+                        -n multimodal \
+                        --timeout=10m
+
+                    kubectl rollout status \
+                        deployment/text-service \
+                        -n multimodal \
+                        --timeout=15m
+
+                    kubectl rollout status \
+                        deployment/vision-service \
+                        -n multimodal \
+                        --timeout=15m
+
+                    kubectl rollout status \
+                        deployment/audio-service \
+                        -n multimodal \
+                        --timeout=15m
+                '''
+            }
+        }
+
+
+        /*
+         * ============================================================
+         * 11. SMOKE TEST
+         * ============================================================
+         */
+
+        stage('Smoke Test') {
+            when {
+                branch 'main'
+            }
+
+            steps {
+                sh '''
+                    kubectl run jenkins-smoke-test \
+                        -n multimodal \
+                        --rm \
+                        -i \
+                        --restart=Never \
+                        --image=curlimages/curl:8.15.0 \
+                        -- \
+                        curl \
+                        --fail \
+                        --max-time 30 \
+                        http://gateway:8000/health/live
+                '''
+            }
+        }
+    }
+
+
+    /*
+     * ================================================================
+     * POST BUILD
+     * ================================================================
+     */
+
+    post {
+
+        success {
+            echo """
+            ============================================================
+            DEPLOYMENT SUCCESSFUL
+            ============================================================
+
+            Commit:
+            ${GIT_COMMIT}
+
+            Images:
+            ${REGISTRY}/${IMAGE_PREFIX}-gateway:${IMAGE_TAG}
+            ${REGISTRY}/${IMAGE_PREFIX}-text:${IMAGE_TAG}
+            ${REGISTRY}/${IMAGE_PREFIX}-vision:${IMAGE_TAG}
+            ${REGISTRY}/${IMAGE_PREFIX}-audio:${IMAGE_TAG}
+
+            Kubernetes namespace:
+            multimodal
+
+            ============================================================
+            """
+        }
+
+        failure {
+            echo """
+            ============================================================
+            PIPELINE FAILED
+            ============================================================
+
+            Commit:
+            ${GIT_COMMIT}
+
+            Check Jenkins logs for the failed stage.
+
+            ============================================================
+            """
+        }
+
+        always {
+            sh '''
+                docker logout ${REGISTRY} || true
+
+                rm -rf .venv || true
+            '''
+
+            cleanWs()
+        }
+    }
+}

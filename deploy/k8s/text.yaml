@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: text-service
+  namespace: multimodal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: text-service
+  template:
+    metadata:
+      labels:
+        app: text-service
+    spec:
+      containers:
+        - name: text
+          image: ghcr.io/OWNER/toy-multimodal-text:IMAGE_TAG
+          ports:
+            - containerPort: 8001
+          env:
+            - name: MODEL_ID
+              value: Qwen/Qwen2.5-1.5B-Instruct
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8001
+            periodSeconds: 20
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8001
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-service
+  namespace: multimodal
+spec:
+  selector:
+    app: text-service
+  ports:
+    - port: 8001
+      targetPort: 8001

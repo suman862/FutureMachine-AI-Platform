@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audio-service
+  namespace: multimodal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audio-service
+  template:
+    metadata:
+      labels:
+        app: audio-service
+    spec:
+      containers:
+        - name: audio
+          image: ghcr.io/OWNER/toy-multimodal-audio:IMAGE_TAG
+          ports:
+            - containerPort: 8003
+          env:
+            - name: MODEL_ID
+              value: tiny
+            - name: DEVICE
+              value: cpu
+            - name: COMPUTE_TYPE
+              value: int8
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8003
+            periodSeconds: 20
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8003
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "4Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audio-service
+  namespace: multimodal
+spec:
+  selector:
+    app: audio-service
+  ports:
+    - port: 8003
+      targetPort: 8003
