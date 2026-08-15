@@ -13,3 +13,7 @@ build/
 *.egg-info/
 .pytest_cache/
 models/
+multienv/
+__pycache__/
+*.pyc
+.env
