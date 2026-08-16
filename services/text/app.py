@@ -3,6 +3,7 @@ from functools import lru_cache
 
 import torch
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -28,10 +29,15 @@ def load_model():
     return tokenizer, model
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(app:FastAPI):
     load_model()
-
+    yield
+    print("The model can produce false result. Verify with expert")
+    
+app=FastAPI(lifespan=lifespan
+            ,title="Text Inference Service",
+            version="0.1.0")
 
 @app.get("/health/live")
 def live() -> dict[str, str]:
