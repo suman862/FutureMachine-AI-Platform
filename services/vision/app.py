@@ -2,14 +2,12 @@ import io
 import os
 from functools import lru_cache
 
-import torch
+from contextlib import asynccontextmanagerh
 from fastapi import FastAPI, File, Form, UploadFile
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForVision2Seq
 
 MODEL_ID = os.getenv("MODEL_ID", "HuggingFaceTB/SmolVLM-500M-Instruct")
-
-app = FastAPI(title="Vision Inference Service", version="0.1.0")
 
 
 @lru_cache(maxsize=1)
@@ -24,9 +22,16 @@ def load_model():
     return processor, model
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(app:FastAPI):
     load_model()
+    yield
+    print("Text inference service shutting down")
+    
+app=FastAPI(lifespan=lifespan
+            ,title="Vision Inference Service",
+            version="0.1.0",)
+
 
 
 @app.get("/health/live")
