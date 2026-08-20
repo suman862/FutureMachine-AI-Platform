@@ -15,7 +15,7 @@ COPY requirements-vision.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-vision.txt
 
-COPY app.py .
+COPY services/vision/app.py .
 
 USER appuser
 EXPOSE 8002

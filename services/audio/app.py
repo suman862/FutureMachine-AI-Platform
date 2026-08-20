@@ -2,6 +2,7 @@ import os
 import tempfile
 from functools import lru_cache
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile
 from faster_whisper import WhisperModel
 
@@ -21,10 +22,15 @@ def load_model() -> WhisperModel:
     )
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(app:FastAPI):
     load_model()
-
+    yield
+    print("Text inference service shutting down")
+    
+app=FastAPI(lifespan=lifespan
+            ,title="Audio Inference Service",
+            version="0.1.0",)
 
 @app.get("/health/live")
 def live() -> dict[str, str]:

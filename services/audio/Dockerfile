@@ -18,7 +18,7 @@ COPY requirements-audio.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-audio.txt
 
-COPY app.py .
+COPY services/audio/app.py .
 
 USER appuser
 EXPOSE 8003

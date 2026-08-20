@@ -3,13 +3,14 @@ from functools import lru_cache
 
 import torch
 from fastapi import FastAPI
+from fastapi import HTTPException
+
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL_ID = os.getenv("MODEL_ID", "Qwen/Qwen2.5-1.5B-Instruct")
 
-app = FastAPI(title="Text Inference Service", version="0.1.0")
 
 
 class GenerateRequest(BaseModel):
@@ -33,11 +34,12 @@ def load_model():
 async def lifespan(app:FastAPI):
     load_model()
     yield
-    print("The model can produce false result. Verify with expert")
+    print("Text inference service shutting down")
     
 app=FastAPI(lifespan=lifespan
             ,title="Text Inference Service",
-            version="0.1.0")
+            version="0.1.0",)
+
 
 @app.get("/health/live")
 def live() -> dict[str, str]:
@@ -50,13 +52,16 @@ def ready() -> dict[str, str]:
         load_model()
         return {"status": "ready"}
     except Exception:
-        return {"status": "not_ready"}
+        return HTTPException(status_code=503, detail={"status": "not_ready"})
 
 
 @app.post("/generate")
 def generate(request: GenerateRequest) -> dict:
     tokenizer, model = load_model()
-    messages = [{"role": "user", "content": request.prompt}]
+    messages = [
+               {"role": "user",
+                "content": request.prompt}
+                  ]
     text = tokenizer.apply_chat_template(
         messages,
         tokenize=False,

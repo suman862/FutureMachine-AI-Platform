@@ -15,7 +15,7 @@ COPY requirements-text.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-text.txt
 
-COPY app.py .
+COPY services/text/app.py .
 
 USER appuser
 EXPOSE 8001
