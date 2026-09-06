@@ -44,5 +44,23 @@ services:
     volumes:
       - hf-cache:/models/cache
 
+  vllm:
+    image: vllm/vllm-openai:latest
+    command:
+      - Qwen/Qwen2.5-1.5B-Instruct
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "8010:8000"
+    gpus: all
+    ipc: host
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - vllm-cache:/root/.cache/vllm
+    restart: unless-stopped
+
 volumes:
   hf-cache:
+  vllm-cache:

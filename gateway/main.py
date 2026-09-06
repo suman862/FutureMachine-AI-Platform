@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Toy Multimodal Platform",
+    title=" Multimodal Platform",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -43,7 +43,6 @@ class TextRequest(BaseModel):
 @app.get("/health/live")
 async def live() -> dict[str, str]:
     return {"status": "alive"}
-
 
 @app.get("/health/ready")
 async def ready() -> dict[str, str]:
