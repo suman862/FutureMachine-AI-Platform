@@ -2,6 +2,8 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from matplotlib import image
+
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -137,3 +139,180 @@ async def vision(
 @app.post("/v1/audio")
 async def audio(file: UploadFile = File(...)) -> dict:
     return await _post_file(f"{AUDIO_URL}/transcribe", file)
+
+#Trition
+TRITON_URL = "http://triton:8000"
+TRITON_MODEL = "resnet50"
+
+
+@app.post("/v1/resnet50")
+async def resnet50(file: UploadFile = File(...)):
+    # ---------------------------------------------------------
+    # 1. Validate image
+    # ---------------------------------------------------------
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be an image.",
+        )
+
+    # ---------------------------------------------------------
+    # 2. Read uploaded image
+    # ---------------------------------------------------------
+
+    image_bytes = await file.read()
+
+    try:
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image file.",
+        ) from exc
+
+    # ---------------------------------------------------------
+    # 3. ResNet-50 preprocessing
+    # ---------------------------------------------------------
+
+    image = image.resize((256, 256))
+
+    width, height = image.size
+
+    left = (width - 224) // 2
+    top = (height - 224) // 2
+    right = left + 224
+    bottom = top + 224
+
+    image = image.crop((left, top, right, bottom))
+
+    image = np.asarray(image, dtype=np.float32)
+
+    # Convert [H, W, C] -> [C, H, W]
+    image = np.transpose(image, (2, 0, 1))
+
+    # Scale [0, 255] -> [0, 1]
+    image = image / 255.0
+
+    # ImageNet normalization
+    mean = np.array(
+        [0.485, 0.456, 0.406],
+        dtype=np.float32,
+    ).reshape(3, 1, 1)
+
+    std = np.array(
+        [0.229, 0.224, 0.225],
+        dtype=np.float32,
+    ).reshape(3, 1, 1)
+
+    image = (image - mean) / std
+
+    # Add batch dimension
+    image = np.expand_dims(image, axis=0)
+
+    # Ensure contiguous FP32 memory
+    image = np.ascontiguousarray(image, dtype=np.float32)
+
+    # ---------------------------------------------------------
+    # 4. Build Triton inference request
+    # ---------------------------------------------------------
+
+    request = {
+        "inputs": [
+            {
+                "name": "input__0",
+                "shape": list(image.shape),
+                "datatype": "FP32",
+                "data": image.flatten().tolist(),
+            }
+        ],
+        "outputs": [
+            {
+                "name": "output__0",
+            }
+        ],
+    }
+
+    # ---------------------------------------------------------
+    # 5. Call Triton
+    # ---------------------------------------------------------
+
+    url = (
+        f"{TRITON_URL}/v2/models/"
+        f"{TRITON_MODEL}/infer"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                json=request,
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not connect to Triton: {exc}",
+        ) from exc
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Triton inference failed.",
+                "triton_status": response.status_code,
+                "triton_response": response.text,
+            },
+        )
+
+    result = response.json()
+
+    # ---------------------------------------------------------
+    # 6. Extract ResNet-50 output
+    # ---------------------------------------------------------
+
+    output = result["outputs"][0]
+
+    logits = np.asarray(
+        output["data"],
+        dtype=np.float32,
+    )
+
+    # ---------------------------------------------------------
+    # 7. Convert logits -> probabilities
+    # ---------------------------------------------------------
+
+    exp_logits = np.exp(
+        logits - np.max(logits)
+    )
+
+    probabilities = exp_logits / np.sum(exp_logits)
+
+    # ---------------------------------------------------------
+    # 8. Get top-5
+    # ---------------------------------------------------------
+
+    top5_indices = np.argsort(
+        probabilities
+    )[-5:][::-1]
+
+    predictions = []
+
+    for index in top5_indices:
+        predictions.append(
+            {
+                "class_id": int(index),
+                "probability": float(
+                    probabilities[index]
+                ),
+            }
+        )
+
+    # ---------------------------------------------------------
+    # 9. Return response
+    # ---------------------------------------------------------
+
+    return {
+        "model": "resnet50",
+        "filename": file.filename,
+        "predictions": predictions,
+    }

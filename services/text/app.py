@@ -1,81 +1,132 @@
 import os
-from functools import lru_cache
+from contextlib import asynccontextmanager
 
-import torch
+import httpx
 from fastapi import FastAPI
 from fastapi import HTTPException
+from pydantic import BaseModel
+from pydantic import Field
 
-from contextlib import asynccontextmanager
-from pydantic import BaseModel, Field
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL_ID = os.getenv("MODEL_ID", "Qwen/Qwen2.5-1.5B-Instruct")
+MODEL_ID = os.getenv(
+    "MODEL_ID",
+    "Qwen/Qwen2.5-1.5B-Instruct",
+)
 
+VLLM_URL = os.getenv(
+    "VLLM_URL",
+    "http://vllm:8000",
+)
 
 
 class GenerateRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=10000)
-    max_new_tokens: int = Field(default=128, ge=1, le=2048)
-
-
-@lru_cache(maxsize=1)
-def load_model():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto",
+    prompt: str = Field(
+        min_length=1,
+        max_length=10000,
     )
-    model.eval()
-    return tokenizer, model
+
+    max_new_tokens: int = Field(
+        default=128,
+        ge=1,
+        le=2048,
+    )
 
 
 @asynccontextmanager
-async def lifespan(app:FastAPI):
-    load_model()
+async def lifespan(app: FastAPI):
+    app.state.client = httpx.AsyncClient(
+        base_url=VLLM_URL,
+        timeout=120.0,
+    )
+
     yield
-    print("Text inference service shutting down")
-    
-app=FastAPI(lifespan=lifespan
-            ,title="Text Inference Service",
-            version="0.1.0",)
+
+    await app.state.client.aclose()
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    title="Text Inference Service",
+    version="0.1.0",
+)
 
 
 @app.get("/health/live")
-def live() -> dict[str, str]:
-    return {"status": "alive"}
+async def live() -> dict[str, str]:
+    return {
+        "status": "alive",
+    }
 
 
 @app.get("/health/ready")
-def ready() -> dict[str, str]:
+async def ready() -> dict[str, str]:
     try:
-        load_model()
-        return {"status": "ready"}
-    except Exception:
-        return HTTPException(status_code=503, detail={"status": "not_ready"})
+        response = await app.state.client.get(
+            "/v1/models",
+        )
+
+        response.raise_for_status()
+
+        return {
+            "status": "ready",
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "error": str(exc),
+            },
+        )
 
 
 @app.post("/generate")
-def generate(request: GenerateRequest) -> dict:
-    tokenizer, model = load_model()
-    messages = [
-               {"role": "user",
-                "content": request.prompt}
-                  ]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-
-    with torch.inference_mode():
-        output = model.generate(
-            **inputs,
-            max_new_tokens=request.max_new_tokens,
-            do_sample=False,
+async def generate(
+    request: GenerateRequest,
+) -> dict:
+    try:
+        response = await app.state.client.post(
+            "/v1/chat/completions",
+            json={
+                "model": MODEL_ID,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": request.prompt,
+                    }
+                ],
+                "max_tokens": request.max_new_tokens,
+                "temperature": 0,
+            },
         )
 
-    generated = output[0][inputs["input_ids"].shape[1]:]
-    answer = tokenizer.decode(generated, skip_special_tokens=True)
-    return {"model": MODEL_ID, "text": answer}
+        response.raise_for_status()
+
+        result = response.json()
+
+        answer = result["choices"][0]["message"]["content"]
+
+        return {
+            "model": MODEL_ID,
+            "text": answer,
+        }
+
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "vLLM returned an error",
+                "status_code": exc.response.status_code,
+                "response": exc.response.text,
+            },
+        )
+
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Unable to connect to vLLM",
+                "detail": str(exc),
+            },
+        )
