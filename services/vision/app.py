@@ -1,14 +1,15 @@
 import io
 import os
-from functools import lru_cache
+import torch
 
-from contextlib import asynccontextmanagerh
+from functools import lru_cache
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, File, Form, UploadFile
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForVision2Seq
 
 MODEL_ID = os.getenv("MODEL_ID", "HuggingFaceTB/SmolVLM-500M-Instruct")
-
 
 @lru_cache(maxsize=1)
 def load_model():

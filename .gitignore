@@ -17,3 +17,11 @@ multienv/
 __pycache__/
 *.pyc
 .env
+working.md
+production_note.md
+kubectl.md
+jenkinsation.md
+ai system design.md
+docker-compose.md
+
+.vscode/
