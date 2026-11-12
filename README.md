@@ -1,4 +1,4 @@
-# Toy Multimodal Platform
+# Multimodal Inferene Platform
 
 A production-oriented reference platform with one FastAPI gateway and three independently deployable inference services:
 
