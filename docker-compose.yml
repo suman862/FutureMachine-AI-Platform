@@ -89,6 +89,18 @@ services:
     shm_size: "1gb"
 
     restart: unless-stopped
+
+  frontend:
+    build: ./frontend-react
+    container_name: multimodal-inference-platform-frontend
+    ports:
+      - "7860:80"
+    
+    depends_on:
+      - gateway
+    restart: unless-stopped
 volumes:
   hf-cache:
   vllm-cache:
+  
+
