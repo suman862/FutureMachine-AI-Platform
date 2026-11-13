@@ -1,16 +1,21 @@
 import os
 import tempfile
 from functools import lru_cache
-
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, File, UploadFile
+
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from starlette.formparsers import MultiPartParser
 from faster_whisper import WhisperModel
+
+# --- 1. MUST BE SET HERE BEFORE APP CREATION ---
+MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB in bytes
+MultiPartParser.max_file_size = MAX_FILE_SIZE
+MultiPartParser.max_part_size = MAX_FILE_SIZE
+# -----------------------------------------------
 
 MODEL_ID = os.getenv("MODEL_ID", "tiny")
 DEVICE = os.getenv("DEVICE", "cpu")
 COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "int8")
-
-app = FastAPI(title="Audio Inference Service", version="0.1.0")
 
 
 @lru_cache(maxsize=1)
@@ -23,14 +28,18 @@ def load_model() -> WhisperModel:
 
 
 @asynccontextmanager
-async def lifespan(app:FastAPI):
+async def lifespan(app: FastAPI):
     load_model()
     yield
     print("Text inference service shutting down")
-    
-app=FastAPI(lifespan=lifespan
-            ,title="Audio Inference Service",
-            version="0.1.0",)
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    title="Audio Inference Service",
+    version="0.1.0",
+)
+
 
 @app.get("/health/live")
 def live() -> dict[str, str]:
@@ -46,12 +55,23 @@ def ready() -> dict[str, str]:
         return {"status": "not_ready"}
 
 
-@app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)) -> dict:
+@app.post("/v1/audio")
+async def transcribe(
+    file: UploadFile = File(
+        ..., description="Upload an audio file (Max size: 25 MB)"
+    )
+) -> dict:
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="File size exceeds the maximum allowed limit of 25 MB.",
+        )
+
     suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as temp:
-        temp.write(await file.read())
+        temp.write(contents)
         temp.flush()
 
         segments, info = load_model().transcribe(temp.name)
