@@ -1,0 +1,107 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "8000:8000"
+    environment:
+      TEXT_SERVICE_URL: http://text-service:8001
+      VISION_SERVICE_URL: http://vision-service:8002
+      AUDIO_SERVICE_URL: http://audio-service:8003
+      HTTP_TIMEOUT_SECONDS: "120"
+    depends_on:
+      - text-service
+      - vision-service
+      - audio-service
+
+  text-service:
+    build:
+     context: .
+     dockerfile: services/text/Dockerfile
+
+    environment:
+      MODEL_ID: Qwen/Qwen2.5-1.5B-Instruct
+      VLLM_URL: http://vllm:8000
+
+    depends_on:
+    - vllm
+
+  vision-service:
+    build:
+      context: .
+      dockerfile: services/vision/Dockerfile
+    environment:
+      MODEL_ID: HuggingFaceTB/SmolVLM-500M-Instruct
+      TRITON_URL: triton:8001
+    volumes:
+      - hf-cache:/models/cache
+    depends_on:
+     - triton
+
+  audio-service:
+    build:
+      context: .
+      dockerfile: services/audio/Dockerfile
+    environment:
+      MODEL_ID: tiny
+      DEVICE: cpu
+      COMPUTE_TYPE: int8
+    volumes:
+      - hf-cache:/models/cache
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    command:
+      - Qwen/Qwen2.5-1.5B-Instruct
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "8010:8000"
+    gpus: all
+    ipc: host
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - vllm-cache:/root/.cache/vllm
+    restart: unless-stopped
+  triton:
+    image: nvcr.io/nvidia/tritonserver:25.10-py3
+
+    command:
+      - tritonserver
+      - --model-repository=/models
+      - --http-port=8000
+      - --grpc-port=8001
+      - --metrics-port=8002
+
+    ports:
+      - "8100:8000"
+      - "8101:8001"
+      - "8102:8002"
+
+    gpus: all
+
+    volumes:
+      - ./triton/model_repository:/models
+
+    shm_size: "1gb"
+
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: multimodal-inference-platform-frontend
+    ports:
+      - "7860:7860"
+    environment:
+      - GATEWAY_URL=http://gateway:8000
+    depends_on:
+      - gateway
+    restart: unless-stopped
+volumes:
+  hf-cache:
+  vllm-cache:
+  
+
