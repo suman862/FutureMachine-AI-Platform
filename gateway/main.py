@@ -6,7 +6,13 @@ from matplotlib import image
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from starlette.formparsers import MultiPartParser  
 from pydantic import BaseModel, Field
+
+#  to allow files up to 25 MB in the gateway ---
+MAX_FILE_SIZE = 25 * 1024 * 1024
+MultiPartParser.max_file_size = MAX_FILE_SIZE
+MultiPartParser.max_part_size = MAX_FILE_SIZE
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -96,6 +102,7 @@ async def _post_file(
     url: str,
     upload: UploadFile,
     prompt: str | None = None,
+    max_size: int = MAX_FILE_SIZE,
 ) -> dict:
     if client is None:
         raise HTTPException(status_code=503, detail="Gateway not initialized")
@@ -105,8 +112,12 @@ async def _post_file(
         data["prompt"] = prompt
 
     content = await upload.read()
-    if len(content) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File exceeds 25 MB limit")
+
+    if len(content) > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the maximum allowed limit of {max_size // (1024 * 1024)} MB",
+        )
 
     files = {
         "file": (
@@ -120,25 +131,39 @@ async def _post_file(
         response = await client.post(url, data=data, files=files)
         response.raise_for_status()
         return response.json()
-    except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=504, detail="Inference service timeout") from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Inference service unavailable") from exc
 
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Inference service timeout",
+        ) from exc
+
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Inference service unavailable",
+        ) from exc
 
 @app.post("/v1/vision")
 async def vision(
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="Upload an image (Max size: 10 MB)"),
     prompt: str = Form("Describe this image."),
 ) -> dict:
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status_code=415, detail="Expected an image")
-    return await _post_file(f"{VISION_URL}/generate", file, prompt)
+    
+    # Enforce 10 MB limit for vision
+    return await _post_file(
+        f"{VISION_URL}/generate", 
+        file, 
+        prompt, 
+        max_size=10 * 1024 * 1024
+    )
 
 
 @app.post("/v1/audio")
-async def audio(file: UploadFile = File(...)) -> dict:
-    return await _post_file(f"{AUDIO_URL}/transcribe", file)
+async def audio(file: UploadFile = File(...,description="Upload an audio file (Max size: 25 MB)")) -> dict:
+    return await _post_file(f"{AUDIO_URL}/v1/audio", file)
 
 #Trition
 TRITON_URL = "http://triton:8000"
@@ -158,7 +183,7 @@ async def resnet50(file: UploadFile = File(...)):
         )
 
     # ---------------------------------------------------------
-    # 2. Read uploaded image
+    #  Read uploaded image
     # ---------------------------------------------------------
 
     image_bytes = await file.read()
@@ -172,7 +197,7 @@ async def resnet50(file: UploadFile = File(...)):
         ) from exc
 
     # ---------------------------------------------------------
-    # 3. ResNet-50 preprocessing
+    #  ResNet-50 preprocessing
     # ---------------------------------------------------------
 
     image = image.resize((256, 256))
@@ -214,7 +239,7 @@ async def resnet50(file: UploadFile = File(...)):
     image = np.ascontiguousarray(image, dtype=np.float32)
 
     # ---------------------------------------------------------
-    # 4. Build Triton inference request
+    #  Build Triton inference request
     # ---------------------------------------------------------
 
     request = {
@@ -234,7 +259,7 @@ async def resnet50(file: UploadFile = File(...)):
     }
 
     # ---------------------------------------------------------
-    # 5. Call Triton
+    # 5 Call Triton
     # ---------------------------------------------------------
 
     url = (
@@ -278,7 +303,7 @@ async def resnet50(file: UploadFile = File(...)):
     )
 
     # ---------------------------------------------------------
-    # 7. Convert logits -> probabilities
+    # 7 Convert logits -> probabilities
     # ---------------------------------------------------------
 
     exp_logits = np.exp(
@@ -288,7 +313,7 @@ async def resnet50(file: UploadFile = File(...)):
     probabilities = exp_logits / np.sum(exp_logits)
 
     # ---------------------------------------------------------
-    # 8. Get top-5
+    # 8Get top-5
     # ---------------------------------------------------------
 
     top5_indices = np.argsort(
