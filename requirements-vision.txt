@@ -7,4 +7,4 @@ transformers==4.55.0
 accelerate==1.10.0
 safetensors==0.6.2
 Pillow==11.3.0
-torch==2.8.0
+torch 

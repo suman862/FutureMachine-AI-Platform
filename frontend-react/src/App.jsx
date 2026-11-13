@@ -790,56 +790,23 @@ function App() {
               </label>
             </div>
           )}
-
-          {/* Microphone recording controls */}
-          {mode === 'audio' && (
+          {/* Audio recording feedback */}
+          {mode === 'audio' && (isRecording || recordingError || recordedAudioUrl) && (
             <div className="mb-3 flex flex-wrap items-center gap-3">
-
-              {!isRecording ? (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 transition hover:bg-white/10 disabled:opacity-50"
-                >
-                  <Mic size={16} />
-                  Record audio
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={stopRecording}
-                  className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300 transition hover:bg-red-500/20"
-                >
-                  <StopCircle size={16} />
-                  Stop recording
-                </button>
-              )}
-
               {isRecording && (
-                <span className="text-sm text-red-300">
-                  ● Recording...
-                </span>
+                <span className="text-sm text-red-300">● Recording...</span>
               )}
-
               {recordingError && (
-                <span
-                  role="alert"
-                  className="text-sm text-red-300"
-                >
+                <span role="alert" className="text-sm text-red-300">
                   {recordingError}
                 </span>
               )}
-
               {recordedAudioUrl && (
-                <audio
-                  controls
-                  src={recordedAudioUrl}
-                  className="h-10 max-w-full"
-                />
+                <audio controls src={recordedAudioUrl} className="h-10 max-w-full" />
               )}
             </div>
           )}
+
 
           {file && (
             <div className="attachment-preview">
@@ -922,6 +889,19 @@ function App() {
             >
               <Paperclip size={19} />
             </button>
+
+            {mode === 'audio' && (
+              <button
+                type="button"
+                className={`attach-btn ${isRecording ? 'text-red-400' : ''}`}
+                onClick={isRecording ? stopRecording : startRecording}
+                title={isRecording ? 'Stop recording' : 'Record audio'}
+                aria-label={isRecording ? 'Stop recording' : 'Record audio'}
+                disabled={loading}
+              >
+                {isRecording ? <StopCircle size={19} /> : <Mic size={19} />}
+              </button>
+            )}
 
             {mode === 'vision' && (
               <button
