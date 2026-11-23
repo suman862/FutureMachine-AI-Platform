@@ -15,7 +15,7 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY requirements-audio.txt .
-RUN pip install --no-cache-dir --upgrade pip \
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r requirements-audio.txt
 
 COPY services/audio/app.py .
