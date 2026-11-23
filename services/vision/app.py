@@ -7,13 +7,11 @@ from functools import lru_cache
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
-from starlette.formparsers import MultiPartParser
 from transformers import AutoModelForVision2Seq, AutoProcessor
 
 # ---  Set global Starlette limits to 10 MB ---
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB in bytes
-MultiPartParser.max_file_size = MAX_FILE_SIZE  # noqa: B010
-MultiPartParser.max_part_size = MAX_FILE_SIZE  # noqa: B010
+
 
 MODEL_ID = os.getenv("MODEL_ID", "HuggingFaceTB/SmolVLM-500M-Instruct")
 MODEL_REVISION = "753c1752602b5e739af7a7fa6947a635051897a3"
@@ -68,7 +66,7 @@ async def generate(
     file: UploadFile = File(..., description="Upload an image (Max size: 10 MB)"),  # noqa: B008
     prompt: str = Form("Describe this image."),
 ) -> dict:
-    raw = await file.read()
+    raw = await file.read(MAX_FILE_SIZE + 1)
 
     if len(raw) > MAX_FILE_SIZE:
         raise HTTPException(
