@@ -8,7 +8,7 @@ RUN useradd --create-home --uid 10001 appuser
 WORKDIR /app
 
 COPY requirements-gateway.txt .
-RUN pip install --no-cache-dir --upgrade pip \
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r requirements-gateway.txt
 
 COPY gateway/ gateway/
