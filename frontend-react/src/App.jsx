@@ -39,6 +39,7 @@ const suggestions = [
 
 function App() {
   const [mode, setMode] = useState('text')
+  const [visionModel, setVisionModel] = useState('smolvlm')
   const [messages, setMessages] = useState([])
   const [prompt, setPrompt] = useState('')
   const [file, setFile] = useState(null)
@@ -249,6 +250,7 @@ function App() {
 
     const selectedFile = file
     const selectedMode = mode
+    const selectedVisionModel = visionModel
 
     const userMessage = {
       id: Date.now(),
@@ -299,10 +301,16 @@ function App() {
           )
         }
 
-        response = await fetch(`/api/v1/${selectedMode}`, {
+        const endpoint= 
+        selectedmode == 'vision' 
+        ? selectedVisionModel == 'resne50'
+          ? 'resnet50'
+          :'vision'
+        : selectedMode
+
+        response = await fetch(`/api/v1/${endpoint}`, {
           method: 'POST',
           body: formData,
-        })
       }
 
       const data = await response.json()
@@ -313,10 +321,30 @@ function App() {
         )
       }
 
-      let answer =
-        data.text ||
-        data.response ||
-        'The model returned an empty response.'
+      let answer
+
+      if (
+         selectedMode === 'vision' &&
+         selectedVisionModel === 'resnet50'
+         ) {
+        const predictions = data.predictions || []
+
+       answer = predictions.length
+         ? `Top 5 predictions:\n\n${predictions
+        .map(
+          (item, index) =>
+            `${index + 1}. Class ID ${item.class_id} — ${
+              (item.probability * 100).toFixed(2)
+                  }%`
+             )
+           .join('\n')}`
+       : 'ResNet50 returned no predictions.'
+    } else {
+       answer =
+         data.text ||
+           data.response ||
+             'The model returned an empty response.'
+}
 
       if (selectedMode === 'audio') {
         const probability = Number(data.language_probability)

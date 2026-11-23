@@ -1,108 +1,151 @@
-# Multimodal Inferene Platform
+# ISHORA
+### One Platform. Multiple Models. Multimodal Intelligence.
 
-A production-oriented reference platform with one FastAPI gateway and three independently deployable inference services:
+ISHORA is a modular, multi-model AI inference platform that brings different AI capabilities together through a unified interface.
 
-- **Text:** Qwen/Qwen2.5-1.5B-Instruct
-- **Vision:** HuggingFaceTB/SmolVLM-500M-Instruct
-- **Audio:** openai/whisper-tiny
+It provides a foundation for running and experimenting with models across text, vision, and audio. Its extensible architecture makes it easier to integrate new models, compare their capabilities, and expand the platform as AI technologies evolve.
 
-The platform is intentionally small, but the delivery path is production-shaped:
+##  Key Features
 
-- FastAPI gateway
-- Separate model services
-- Docker multi-stage builds
-- Non-root containers
-- Health/readiness endpoints
-- Pydantic request validation
-- Structured JSON logging
-- Unit/integration tests
-- Ruff + mypy + Bandit
-- GitHub Actions CI
-- Container image scanning with Trivy
-- GHCR image publishing
-- Kubernetes deployment
-- Rolling updates
-- Resource requests/limits
-- Secret/config separation
-- NetworkPolicy
-- HPA
-- PodDisruptionBudget
-- Kubernetes probes
+- **Multi-Model Support:** Designed to integrate multiple models within each AI modality.
+- **Multimodal Inference:** Work with text, images, and audio through one platform.
+- **Unified Interface:** Access different AI capabilities from a single application.
+- **Modular Architecture:** Keep model inference services independent and easier to extend.
+- **Flexible Integration:** Add or replace models without redesigning the entire application.
+- **Containerized Deployment:** Run platform services using Docker Compose.
 
-## Architecture
+##  Available Models
+
+ISHORA currently integrates the following models and inference components:
+
+| Modality | Model | Capability |
+|---|---|---|
+| Text | Qwen2.5-1.5B-Instruct | Text generation and instruction following |
+| Vision | SmolVLM-500M-Instruct | Image understanding and visual question answering |
+| Audio | Whisper Tiny | Speech recognition and transcription |
+| Computer Vision | ResNet50 | Image classification through NVIDIA Triton |
+
+### Built for Multiple Models
+
+ISHORA is not limited to a fixed set of models. Its architecture is designed to support additional models across different modalities.
+
+Potential extensions include:
+
+- Multiple LLMs for reasoning, generation, and question answering.
+- Different vision-language models for image understanding.
+- Additional speech recognition and audio-processing models.
+- Specialized models for domain-specific applications, including medical question answering.
+
+These extensions can be integrated progressively as development continues.
+
+##  Architecture
+
+ISHORA follows a modular microservice-oriented architecture.
 
 ```text
-                         Internet / Client
-                                |
-                                v
-                      +-------------------+
-                      | FastAPI Gateway   |
-                      | /v1/text          |
-                      | /v1/vision        |
-                      | /v1/audio         |
-                      +---------+---------+
-                                |
-              +-----------------+-----------------+
-              |                 |                 |
-              v                 v                 v
-       +-------------+   +-------------+   +-------------+
-       | text-service|   |vision-service|  |audio-service|
-       | Qwen 1.5B   |   | SmolVLM     |   | Whisper tiny|
-       +-------------+   +-------------+   +-------------+
+                    ┌──────────────────────┐
+                    │      User Interface  │
+                    │     React + Vite     │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │    FastAPI Gateway   │
+                    │  Unified API Layer   │
+                    └──────────┬───────────┘
+                               │
+             ┌─────────────────┼─────────────────┐
+             │                 │                 │
+      ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
+      │ Text Service│   │Vision Service│  │Audio Service│
+      └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
+             │                 │                 │
+      ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
+      │  LLM Models │   │  VLM Models │   │Whisper Models│
+      └─────────────┘   └─────────────┘   └─────────────┘
+
+                 Additional Model Integrations
+                       NVIDIA Triton
 ```
 
-## Repository
+The API gateway provides a unified entry point, while independent inference services handle model-specific processing.
+
+##  Technology Stack
+
+| Component | Technologies |
+|---|---|
+| Frontend | React, Vite, Tailwind CSS |
+| Backend | Python, FastAPI |
+| AI Models | Qwen, SmolVLM, Whisper, ResNet50 |
+| Inference | vLLM, PyTorch, NVIDIA Triton |
+| Deployment | Docker, Docker Compose |
+
+##  Project Structure
 
 ```text
-.
-├── .github/workflows/ci-cd.yml
+ISHORA/
+├── frontend-react/
 ├── gateway/
 ├── services/
 │   ├── text/
 │   ├── vision/
 │   └── audio/
-├── deploy/k8s/
+├── triton/
+├── deploy/
 ├── tests/
-├── Dockerfile.gateway
 ├── docker-compose.yml
-├── Makefile
-└── pyproject.toml
+├── Dockerfile.gateway
+└── README.md
 ```
 
-## Local development
+##  Getting Started
 
-Requirements:
+### Prerequisites
 
 - Docker
 - Docker Compose
+- NVIDIA GPU and NVIDIA Container Toolkit for the current GPU-backed configuration
+
+### Installation
+
+Clone the repository:
 
 ```bash
-cp .env.example .env
-docker compose up --build
+git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+cd YOUR_REPOSITORY
 ```
 
-Gateway:
+Start the platform:
 
-```text
-http://localhost:8000
+```bash
+docker compose up --build -d
 ```
 
-Health:
+### Access the Platform
+
+| Service | URL |
+|---|---|
+| Web Interface | http://localhost:7860 |
+| API Gateway | http://localhost:8000 |
+| API Documentation | http://localhost:8000/docs |
+
+### Health Checks
 
 ```bash
 curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
-Text:
+##  API Examples
+
+**Text Generation**
 
 ```bash
 curl -X POST http://localhost:8000/v1/text \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"Explain attention in one paragraph.","max_new_tokens":128}'
+  -d '{"prompt":"Explain computer vision.","max_new_tokens":128}'
 ```
 
-Vision:
+**Image Understanding**
 
 ```bash
 curl -X POST http://localhost:8000/v1/vision \
@@ -110,66 +153,30 @@ curl -X POST http://localhost:8000/v1/vision \
   -F "prompt=Describe this image."
 ```
 
-Audio:
+**Audio Transcription**
 
 ```bash
 curl -X POST http://localhost:8000/v1/audio \
   -F "file=@audio.wav"
 ```
 
-## CI/CD flow
+##  Development Roadmap
 
-Every pull request:
+ISHORA is an evolving project. Planned improvements include:
 
-1. Ruff format check
-2. Ruff lint
-3. mypy
-4. Bandit
-5. pytest
-6. Docker builds
-7. Trivy filesystem/image security checks
+- Integrating additional open-source LLMs and vision-language models.
+- Supporting more model choices within each modality.
+- Adding specialized AI applications, including medical question answering.
+- Improving model evaluation and response quality.
+- Expanding monitoring, observability, and deployment capabilities.
+- Exploring scalable inference and model-serving strategies.
 
-Every push to `main`:
+##  Project Vision
 
-1. Run all CI checks
-2. Build immutable Docker images
-3. Tag images with Git SHA
-4. Push to GitHub Container Registry
-5. Deploy manifests to Kubernetes
-6. Wait for rollout
-7. Fail the deployment if rollout fails
+The goal of ISHORA is to build a flexible AI platform where different models and modalities work together through one unified system.
 
-The deployment uses the Git SHA rather than `latest`, so rollback is deterministic.
+Rather than depending on a single model, ISHORA aims to provide an extensible foundation for integrating, testing, and serving a growing ecosystem of AI models.
 
-## Required GitHub secrets
+---
 
-For Kubernetes deployment:
-
-- `KUBE_CONFIG_B64` — base64 encoded kubeconfig
-
-For a private GHCR registry, configure the cluster's `imagePullSecrets`.
-
-## Production hardening before real traffic
-
-This repository is production-shaped, not production-complete. Before exposing it to untrusted Internet traffic, add:
-
-- API authentication/authorization
-- TLS termination
-- rate limiting
-- request quotas
-- distributed tracing
-- metrics backend
-- centralized log aggregation
-- model artifact/cache strategy
-- GPU scheduling
-- persistent model cache
-- image signing/verification
-- admission policies
-- external secrets manager
-- network egress policy
-- backup/DR strategy
-- load testing
-- canary/blue-green deployment
-- model evaluation gates
-- PII/abuse filtering
-- dependency/image CVE policy
+**ISHORA — One Platform. Multiple Models. Multimodal Intelligence.**

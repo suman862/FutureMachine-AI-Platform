@@ -1,12 +1,14 @@
 import logging
 import os
-from contextlib import asynccontextmanager
+import io
+import numpy as np
 
-from matplotlib import image
+from contextlib import asynccontextmanager
+from PIL import Image
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from starlette.formparsers import MultiPartParser  
+from starlette.formparsers import MultiPartParser
 from pydantic import BaseModel, Field
 
 #  to allow files up to 25 MB in the gateway ---
