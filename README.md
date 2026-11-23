@@ -1,6 +1,8 @@
 # ISHORA
 ### One Platform. Multiple Models. Multimodal Intelligence.
 
+![alt text](image.png)
+
 ISHORA is a modular, multi-model AI inference platform that brings different AI capabilities together through a unified interface.
 
 It provides a foundation for running and experimenting with models across text, vision, and audio. Its extensible architecture makes it easier to integrate new models, compare their capabilities, and expand the platform as AI technologies evolve.
