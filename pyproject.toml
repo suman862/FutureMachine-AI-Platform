@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=78.1.1", "wheel>=0.46.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,10 +7,10 @@ name = "toy-multimodal-platform"
 version = "0.1.0"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    "fastapi==0.116.1",
+    "fastapi==0.165.0",
+    "python-multipart==0.0.34",
     "uvicorn[standard]==0.35.0",
     "httpx==0.28.1",
-    "python-multipart==0.0.20",
     "pydantic-settings==2.10.1",
 ]
 
@@ -22,7 +22,7 @@ dev = [
     "mypy==1.17.1",
     "bandit==1.9.4",
     "numpy",
-    "pillow",
+    "pillow==13.0.0",
 ]
 
 
