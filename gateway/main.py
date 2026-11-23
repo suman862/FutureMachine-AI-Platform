@@ -1,21 +1,21 @@
+import io
 import logging
 import os
-import io
-import numpy as np
-
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from PIL import Image
+from typing import Any, cast
 
 import httpx
+import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from starlette.formparsers import MultiPartParser
+from PIL import Image
 from pydantic import BaseModel, Field
+from starlette.formparsers import MultiPartParser
 
 #  to allow files up to 25 MB in the gateway ---
 MAX_FILE_SIZE = 25 * 1024 * 1024
-MultiPartParser.max_file_size = MAX_FILE_SIZE
-MultiPartParser.max_part_size = MAX_FILE_SIZE
-
+setattr(MultiPartParser, "max_file_size", MAX_FILE_SIZE)  # noqa: B010
+setattr(MultiPartParser, "max_part_size", MAX_FILE_SIZE)  # noqa: B010
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format='{"level":"%(levelname)s","message":"%(message)s"}',
@@ -31,7 +31,7 @@ client: httpx.AsyncClient | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global client
     client = httpx.AsyncClient(timeout=httpx.Timeout(TIMEOUT, connect=10.0))
     yield
@@ -53,6 +53,7 @@ class TextRequest(BaseModel):
 @app.get("/health/live")
 async def live() -> dict[str, str]:
     return {"status": "alive"}
+
 
 @app.get("/health/ready")
 async def ready() -> dict[str, str]:
@@ -77,13 +78,16 @@ async def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
-async def _post_json(url: str, payload: dict) -> dict:
+async def _post_json(
+    url: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     if client is None:
         raise HTTPException(status_code=503, detail="Gateway not initialized")
     try:
         response = await client.post(url, json=payload)
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
     except httpx.TimeoutException as exc:
         raise HTTPException(status_code=504, detail="Inference service timeout") from exc
     except httpx.HTTPStatusError as exc:
@@ -96,7 +100,7 @@ async def _post_json(url: str, payload: dict) -> dict:
 
 
 @app.post("/v1/text")
-async def text(request: TextRequest) -> dict:
+async def text(request: TextRequest) -> dict[str, Any]:
     return await _post_json(f"{TEXT_URL}/generate", request.model_dump())
 
 
@@ -105,7 +109,7 @@ async def _post_file(
     upload: UploadFile,
     prompt: str | None = None,
     max_size: int = MAX_FILE_SIZE,
-) -> dict:
+) -> dict[str, Any]:
     if client is None:
         raise HTTPException(status_code=503, detail="Gateway not initialized")
 
@@ -132,7 +136,7 @@ async def _post_file(
     try:
         response = await client.post(url, data=data, files=files)
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     except httpx.TimeoutException as exc:
         raise HTTPException(
@@ -146,111 +150,77 @@ async def _post_file(
             detail="Inference service unavailable",
         ) from exc
 
+
 @app.post("/v1/vision")
 async def vision(
-    file: UploadFile = File(..., description="Upload an image (Max size: 10 MB)"),
+    file: UploadFile = File(..., description="Upload an image (Max size: 10 MB)"),  # noqa: B008
     prompt: str = Form("Describe this image."),
-) -> dict:
+) -> dict[str, Any]:
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status_code=415, detail="Expected an image")
-    
+
     # Enforce 10 MB limit for vision
-    return await _post_file(
-        f"{VISION_URL}/generate", 
-        file, 
-        prompt, 
-        max_size=10 * 1024 * 1024
-    )
+    return await _post_file(f"{VISION_URL}/generate", file, prompt, max_size=10 * 1024 * 1024)
 
 
 @app.post("/v1/audio")
-async def audio(file: UploadFile = File(...,description="Upload an audio file (Max size: 25 MB)")) -> dict:
+async def audio(
+    file: UploadFile = File(..., description="Upload an audio file (Max size: 25 MB)"),  # noqa: B008
+) -> dict[str, Any]:
     return await _post_file(f"{AUDIO_URL}/v1/audio", file)
 
-#Trition
+
+# Trition
 TRITON_URL = "http://triton:8000"
 TRITON_MODEL = "resnet50"
 
 
 @app.post("/v1/resnet50")
-async def resnet50(file: UploadFile = File(...)):
-    # ---------------------------------------------------------
-    # 1. Validate image
-    # ---------------------------------------------------------
-
+async def resnet50(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=400,
-            detail="File must be an image.",
-        )
-
-    # ---------------------------------------------------------
-    #  Read uploaded image
-    # ---------------------------------------------------------
+        raise HTTPException(status_code=400, detail="File must be an image.")
 
     image_bytes = await file.read()
 
     try:
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception as exc:
         raise HTTPException(
             status_code=400,
             detail="Invalid image file.",
         ) from exc
 
-    # ---------------------------------------------------------
-    #  ResNet-50 preprocessing
-    # ---------------------------------------------------------
-
-    image = image.resize((256, 256))
-
-    width, height = image.size
+    # Resize and center crop
+    pil_image = pil_image.resize((256, 256))
+    width, height = pil_image.size
 
     left = (width - 224) // 2
     top = (height - 224) // 2
-    right = left + 224
-    bottom = top + 224
 
-    image = image.crop((left, top, right, bottom))
+    pil_image = pil_image.crop((left, top, left + 224, top + 224))
 
-    image = np.asarray(image, dtype=np.float32)
-
-    # Convert [H, W, C] -> [C, H, W]
-    image = np.transpose(image, (2, 0, 1))
-
-    # Scale [0, 255] -> [0, 1]
-    image = image / 255.0
+    # Convert PIL image to NumPy array (CHW format)
+    image_array = np.asarray(pil_image, dtype=np.float32)
+    image_array = np.transpose(image_array, (2, 0, 1))
+    image_array = image_array / 255.0
 
     # ImageNet normalization
-    mean = np.array(
-        [0.485, 0.456, 0.406],
-        dtype=np.float32,
-    ).reshape(3, 1, 1)
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)
 
-    std = np.array(
-        [0.229, 0.224, 0.225],
-        dtype=np.float32,
-    ).reshape(3, 1, 1)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1)
 
-    image = (image - mean) / std
+    image_array = (image_array - mean) / std
+    image_array = np.expand_dims(image_array, axis=0)
+    image_array = np.ascontiguousarray(image_array, dtype=np.float32)
 
-    # Add batch dimension
-    image = np.expand_dims(image, axis=0)
-
-    # Ensure contiguous FP32 memory
-    image = np.ascontiguousarray(image, dtype=np.float32)
-
-    # ---------------------------------------------------------
-    #  Build Triton inference request
-    # ---------------------------------------------------------
-
+    # Build Triton inference request
     request = {
         "inputs": [
             {
                 "name": "input__0",
-                "shape": list(image.shape),
+                "shape": list(image_array.shape),
                 "datatype": "FP32",
-                "data": image.flatten().tolist(),
+                "data": image_array.flatten().tolist(),
             }
         ],
         "outputs": [
@@ -260,21 +230,12 @@ async def resnet50(file: UploadFile = File(...)):
         ],
     }
 
-    # ---------------------------------------------------------
-    # 5 Call Triton
-    # ---------------------------------------------------------
-
-    url = (
-        f"{TRITON_URL}/v2/models/"
-        f"{TRITON_MODEL}/infer"
-    )
+    # Call Triton
+    url = f"{TRITON_URL}/v2/models/{TRITON_MODEL}/infer"
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                json=request,
-            )
+        async with httpx.AsyncClient(timeout=30.0) as triton_client:
+            response = await triton_client.post(url, json=request)
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=503,
@@ -292,51 +253,24 @@ async def resnet50(file: UploadFile = File(...)):
         )
 
     result = response.json()
-
-    # ---------------------------------------------------------
-    # 6. Extract ResNet-50 output
-    # ---------------------------------------------------------
-
     output = result["outputs"][0]
 
-    logits = np.asarray(
-        output["data"],
-        dtype=np.float32,
-    )
+    logits = np.asarray(output["data"], dtype=np.float32)
 
-    # ---------------------------------------------------------
-    # 7 Convert logits -> probabilities
-    # ---------------------------------------------------------
-
-    exp_logits = np.exp(
-        logits - np.max(logits)
-    )
-
+    # Convert logits to probabilities
+    exp_logits = np.exp(logits - np.max(logits))
     probabilities = exp_logits / np.sum(exp_logits)
 
-    # ---------------------------------------------------------
-    # 8Get top-5
-    # ---------------------------------------------------------
+    # Get top-5 predictions
+    top5_indices = np.argsort(probabilities)[-5:][::-1]
 
-    top5_indices = np.argsort(
-        probabilities
-    )[-5:][::-1]
-
-    predictions = []
-
-    for index in top5_indices:
-        predictions.append(
-            {
-                "class_id": int(index),
-                "probability": float(
-                    probabilities[index]
-                ),
-            }
-        )
-
-    # ---------------------------------------------------------
-    # 9. Return response
-    # ---------------------------------------------------------
+    predictions = [
+        {
+            "class_id": int(index),
+            "probability": float(probabilities[index]),
+        }
+        for index in top5_indices
+    ]
 
     return {
         "model": "resnet50",

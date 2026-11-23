@@ -2,11 +2,8 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
-from fastapi import HTTPException
-from pydantic import BaseModel
-from pydantic import Field
-
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 MODEL_ID = os.getenv(
     "MODEL_ID",
@@ -78,7 +75,7 @@ async def ready() -> dict[str, str]:
                 "status": "not_ready",
                 "error": str(exc),
             },
-        )
+        ) from exc
 
 
 @app.post("/generate")
@@ -120,7 +117,7 @@ async def generate(
                 "status_code": exc.response.status_code,
                 "response": exc.response.text,
             },
-        )
+        ) from exc
 
     except httpx.RequestError as exc:
         raise HTTPException(
@@ -129,4 +126,4 @@ async def generate(
                 "error": "Unable to connect to vLLM",
                 "detail": str(exc),
             },
-        )
+        ) from exc
