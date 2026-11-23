@@ -10,12 +10,10 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 from pydantic import BaseModel, Field
-from starlette.formparsers import MultiPartParser
 
 #  to allow files up to 25 MB in the gateway ---
 MAX_FILE_SIZE = 25 * 1024 * 1024
-setattr(MultiPartParser, "max_file_size", MAX_FILE_SIZE)  # noqa: B010
-setattr(MultiPartParser, "max_part_size", MAX_FILE_SIZE)  # noqa: B010
+
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format='{"level":"%(levelname)s","message":"%(message)s"}',
@@ -117,7 +115,7 @@ async def _post_file(
     if prompt is not None:
         data["prompt"] = prompt
 
-    content = await upload.read()
+    content = await upload.read(max_size + 1)
 
     if len(content) > max_size:
         raise HTTPException(
@@ -180,7 +178,12 @@ async def resnet50(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B00
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 
-    image_bytes = await file.read()
+    image_bytes = await file.read(10 * 1024 * 1024 + 1)
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="Image exceeds the maximum allowed limit of 10 MB",
+        )
 
     try:
         pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
