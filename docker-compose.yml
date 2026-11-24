@@ -33,11 +33,11 @@ services:
       dockerfile: services/vision/Dockerfile
     environment:
       MODEL_ID: HuggingFaceTB/SmolVLM-500M-Instruct
-      TRITON_URL: triton:8001
     volumes:
       - hf-cache:/models/cache
-    depends_on:
-     - triton
+    gpus: all
+    restart: unless-stopped 
+
 
   audio-service:
     build:
@@ -58,6 +58,8 @@ services:
       - 0.0.0.0
       - --port
       - "8000"
+      - --gpu-memory-utilization
+      - "0.70"
     ports:
       - "8010:8000"
     gpus: all
