@@ -13,6 +13,9 @@ WORKDIR /app
 
 COPY requirements-vision.txt .
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cu128 \
+    torch==2.8.0 \
     && pip install --no-cache-dir -r requirements-vision.txt
 
 COPY services/vision/app.py .
