@@ -13,6 +13,7 @@ WORKDIR /app
 
 COPY requirements-text.txt .
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir torch==2.8.0 \
     && pip install --no-cache-dir -r requirements-text.txt
 
 COPY services/text/app.py .
