@@ -302,8 +302,8 @@ function App() {
         }
 
         const endpoint= 
-        selectedmode == 'vision' 
-        ? selectedVisionModel == 'resne50'
+        selectedMode === 'vision' 
+        ? selectedVisionModel === 'resnet50'
           ? 'resnet50'
           :'vision'
         : selectedMode
@@ -311,7 +311,8 @@ function App() {
         response = await fetch(`/api/v1/${endpoint}`, {
           method: 'POST',
           body: formData,
-      }
+      })
+    }
 
       const data = await response.json()
 

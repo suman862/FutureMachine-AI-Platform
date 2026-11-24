@@ -12,7 +12,10 @@ RUN useradd --create-home --uid 10001 appuser \
 WORKDIR /app
 
 COPY requirements-vision.txt .
-RUN pip install --no-cache-dir --upgrade pip \
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cu128 \
+    torch==2.8.0 \
     && pip install --no-cache-dir -r requirements-vision.txt
 
 COPY services/vision/app.py .

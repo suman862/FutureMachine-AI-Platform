@@ -1,16 +1,14 @@
 import os
 import tempfile
-from functools import lru_cache
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from starlette.formparsers import MultiPartParser
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from faster_whisper import WhisperModel
 
 # --- 1. MUST BE SET HERE BEFORE APP CREATION ---
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB in bytes
-MultiPartParser.max_file_size = MAX_FILE_SIZE
-MultiPartParser.max_part_size = MAX_FILE_SIZE
+
 # -----------------------------------------------
 
 MODEL_ID = os.getenv("MODEL_ID", "tiny")
@@ -57,11 +55,9 @@ def ready() -> dict[str, str]:
 
 @app.post("/v1/audio")
 async def transcribe(
-    file: UploadFile = File(
-        ..., description="Upload an audio file (Max size: 25 MB)"
-    )
+    file: UploadFile = File(..., description="Upload an audio file (Max size: 25 MB)"),  # noqa: B008
 ) -> dict:
-    contents = await file.read()
+    contents = await file.read(MAX_FILE_SIZE + 1)
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=413,
