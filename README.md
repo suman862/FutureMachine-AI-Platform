@@ -112,8 +112,9 @@ ISHORA/
 Clone the repository:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-cd YOUR_REPOSITORY
+git clone https://github.com/suman862/FutureMachine-AI-Platform.git
+
+conda create - environment name Python=3.11 -y
 ```
 
 Start the platform:
